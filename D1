@@ -370,3 +370,101 @@ Here is the corrected HTML file with the necessary fixes to work with your Sprin
 4. **Disconnection**: Fixed the disconnection logic to close the WebSocket properly.
 
 Make sure your Spring Boot application is running and that the WebSocket endpoint (`/ws`) is correctly configured to accept connections and process messages as defined in your Java code.
+
+
+
+
+
+Here's a sample `pom.xml` file for your Spring Boot application with dependencies for Kafka, WebSocket, and the necessary Spring Boot starters:
+
+```xml
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <groupId>com.example</groupId>
+    <artifactId>kafka-websocket-example</artifactId>
+    <version>1.0.0</version>
+    <packaging>jar</packaging>
+
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>3.1.0</version>
+        <relativePath/> <!-- lookup parent from repository -->
+    </parent>
+
+    <properties>
+        <java.version>17</java.version>
+        <spring-cloud.version>2022.0.3</spring-cloud.version>
+    </properties>
+
+    <dependencies>
+        <!-- Spring Boot dependencies -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-websocket</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.kafka</groupId>
+            <artifactId>spring-kafka</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- Jackson for JSON processing -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+        </dependency>
+    </dependencies>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>org.springframework.cloud</groupId>
+                <artifactId>spring-cloud-dependencies</artifactId>
+                <version>${spring-cloud.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
+</project>
+```
+
+### Explanation of Dependencies
+
+- **spring-boot-starter-web**: For building web applications, including RESTful services.
+- **spring-boot-starter-websocket**: For WebSocket support in Spring Boot applications.
+- **spring-kafka**: For Kafka consumer and producer functionalities.
+- **spring-boot-starter**: Core starter, including auto-configuration support, logging, and YAML configuration.
+- **spring-boot-starter-test**: For testing Spring Boot applications.
+- **jackson-databind**: For JSON processing.
+
+### Usage
+
+1. **Save the `pom.xml` file** in the root directory of your Spring Boot project.
+2. **Run the project** using your IDE or by executing `mvn spring-boot:run` in the command line.
+3. **Access the WebSocket client** by opening the HTML file in a web browser.
+
+This `pom.xml` file should provide all the necessary dependencies to get your Spring Boot application working with Kafka and WebSocket integration.
