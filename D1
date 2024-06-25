@@ -1,0 +1,372 @@
+Refactoring the provided Python code into a Java Spring Boot application involves several steps, including setting up a Spring Boot project, configuring Kafka consumers, handling WebSocket connections, and defining the necessary services. Below is an outline of how you can achieve this:
+
+### Step 1: Set Up Spring Boot Project
+
+1. **Create a new Spring Boot project** using Spring Initializr (https://start.spring.io/).
+   - Add dependencies for Kafka, WebSocket, and Web (Spring Web).
+
+### Step 2: Create Kafka Configuration
+
+First, create a Kafka configuration to set up Kafka consumers.
+
+```java
+// KafkaConsumerConfig.java
+package com.example.kafkaconsumer.config;
+
+import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.common.serialization.StringDeserializer;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+import java.util.HashMap;
+import java.util.Map;
+
+@Configuration
+public class KafkaConsumerConfig {
+
+    @Bean
+    public KafkaConsumer<String, String> annotationDataConsumer() {
+        return new KafkaConsumer<>(consumerConfigs("dcm_annotation_data"));
+    }
+
+    @Bean
+    public KafkaConsumer<String, String> deviceDataConsumer() {
+        return new KafkaConsumer<>(consumerConfigs("dcm_device_data"));
+    }
+
+    private Map<String, Object> consumerConfigs(String topicName) {
+        Map<String, Object> props = new HashMap<>();
+        props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:9092");
+        props.put(ConsumerConfig.GROUP_ID_CONFIG, topicName);
+        props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
+        props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
+        props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "latest");
+        return props;
+    }
+}
+```
+
+### Step 3: Create WebSocket Configuration
+
+Next, configure WebSocket endpoints.
+
+```java
+// WebSocketConfig.java
+package com.example.kafkaconsumer.config;
+
+import org.springframework.context.annotation.Configuration;
+import org.springframework.web.socket.config.annotation.EnableWebSocket;
+import org.springframework.web.socket.config.annotation.WebSocketConfigurer;
+import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry;
+
+@Configuration
+@EnableWebSocket
+public class WebSocketConfig implements WebSocketConfigurer {
+
+    private final WebSocketHandler webSocketHandler;
+
+    public WebSocketConfig(WebSocketHandler webSocketHandler) {
+        this.webSocketHandler = webSocketHandler;
+    }
+
+    @Override
+    public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
+        registry.addHandler(webSocketHandler, "/ws").setAllowedOrigins("*");
+    }
+}
+```
+
+### Step 4: Implement WebSocket Handler
+
+Implement a WebSocket handler to manage WebSocket connections and subscriptions.
+
+```java
+// WebSocketHandler.java
+package com.example.kafkaconsumer.handler;
+
+import com.example.kafkaconsumer.service.KafkaConsumerService;
+import org.springframework.web.socket.CloseStatus;
+import org.springframework.web.socket.TextMessage;
+import org.springframework.web.socket.WebSocketSession;
+import org.springframework.web.socket.handler.TextWebSocketHandler;
+
+import java.io.IOException;
+import java.util.Map;
+
+public class WebSocketHandler extends TextWebSocketHandler {
+
+    private final KafkaConsumerService kafkaConsumerService;
+
+    public WebSocketHandler(KafkaConsumerService kafkaConsumerService) {
+        this.kafkaConsumerService = kafkaConsumerService;
+    }
+
+    @Override
+    public void handleTextMessage(WebSocketSession session, TextMessage message) throws IOException {
+        Map<String, Object> payload = new ObjectMapper().readValue(message.getPayload(), Map.class);
+        kafkaConsumerService.subscribe(session, payload);
+    }
+
+    @Override
+    public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
+        kafkaConsumerService.unsubscribe(session);
+    }
+}
+```
+
+### Step 5: Implement Kafka Consumer Service
+
+Create a service to handle Kafka message processing and WebSocket communication.
+
+```java
+// KafkaConsumerService.java
+package com.example.kafkaconsumer.service;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.apache.kafka.clients.consumer.ConsumerRecords;
+import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.springframework.stereotype.Service;
+import org.springframework.web.socket.WebSocketSession;
+
+import java.io.IOException;
+import java.time.Duration;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+
+@Service
+public class KafkaConsumerService {
+
+    private final KafkaConsumer<String, String> annotationDataConsumer;
+    private final KafkaConsumer<String, String> deviceDataConsumer;
+    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final Map<WebSocketSession, List<String>> sessions = new ConcurrentHashMap<>();
+
+    public KafkaConsumerService(KafkaConsumer<String, String> annotationDataConsumer, KafkaConsumer<String, String> deviceDataConsumer) {
+        this.annotationDataConsumer = annotationDataConsumer;
+        this.deviceDataConsumer = deviceDataConsumer;
+    }
+
+    public void subscribe(WebSocketSession session, Map<String, Object> payload) {
+        List<String> requiredData = (List<String>) payload.get("required_data");
+        List<String> deviceIds = (List<String>) payload.get("device_ids");
+        List<String> roles = (List<String>) payload.get("roles");
+
+        sessions.put(session, requiredData);
+
+        requiredData.forEach(data -> {
+            if (data.equals("dcm_device_data")) {
+                processMessages(deviceDataConsumer, session, deviceIds);
+            } else if (data.equals("dcm_annotation_data")) {
+                processMessages(annotationDataConsumer, session, deviceIds);
+            }
+        });
+    }
+
+    public void unsubscribe(WebSocketSession session) {
+        sessions.remove(session);
+    }
+
+    private void processMessages(KafkaConsumer<String, String> consumer, WebSocketSession session, List<String> deviceIds) {
+        new Thread(() -> {
+            try {
+                while (true) {
+                    ConsumerRecords<String, String> records = consumer.poll(Duration.ofMillis(100));
+                    records.forEach(record -> {
+                        try {
+                            Map<String, Object> message = objectMapper.readValue(record.value(), Map.class);
+                            if (deviceIds.contains(message.get("id"))) {
+                                session.sendMessage(new TextMessage(record.value()));
+                            }
+                        } catch (IOException e) {
+                            e.printStackTrace();
+                        }
+                    });
+                }
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }).start();
+    }
+}
+```
+
+### Step 6: Application Entry Point
+
+Finally, create the main application class to run the Spring Boot application.
+
+```java
+// KafkaConsumerApplication.java
+package com.example.kafkaconsumer;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+
+@SpringBootApplication
+public class KafkaConsumerApplication {
+
+    public static void main(String[] args) {
+        SpringApplication.run(KafkaConsumerApplication.class, args);
+    }
+}
+```
+
+### Step 7: Templates and Resources
+
+Add an HTML template for the WebSocket connection in `src/main/resources/templates`.
+
+```html
+<!-- index.html -->
+<!DOCTYPE html>
+<html>
+<head>
+    <title>WebSocket Test</title>
+    <script type="text/javascript">
+        var socket = new WebSocket("ws://localhost:8080/ws");
+
+        socket.onmessage = function(event) {
+            console.log("Received message: " + event.data);
+        };
+
+        socket.onopen = function() {
+            socket.send(JSON.stringify({
+                required_data: ["dcm_device_data"],
+                device_ids: ["device1", "device2"],
+                roles: ["role1"]
+            }));
+        };
+    </script>
+</head>
+<body>
+    <h1>WebSocket Test</h1>
+</body>
+</html>
+```
+
+### Running the Application
+
+1. **Build and run the Spring Boot application**.
+2. **Open `index.html`** in a browser to establish a WebSocket connection and receive messages from Kafka topics.
+
+This should give you a good starting point for refactoring your Python code into a Java Spring Boot application with Kafka and WebSocket integration.
+
+
+Here is the corrected HTML file with the necessary fixes to work with your Spring Boot application. I have also fixed some syntax issues and corrected the tags:
+
+```html
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>WebSocket Example</title>
+    <script src="//cdnjs.cloudflare.com/ajax/libs/socket.io/4.2.0/socket.io.js"></script>
+    <script>
+        let socket = null;
+
+        function connect() {
+            disconnect();
+
+            let namespace = '/ws';
+            socket = io(namespace);
+
+            let objTopic = document.getElementById("ddlTopic");
+            let objRole = document.getElementById("ddlRole");
+            let objDeviceId = document.getElementById("txtDeviceId");
+
+            let req_data = objTopic.options[objTopic.selectedIndex].value;
+            let role = objRole.options[objRole.selectedIndex].value;
+            let deviceId = objDeviceId.value;
+
+            let objJs = {
+                'required_data': [req_data],
+                'roles': [role],
+                'device_ids': [deviceId]
+            };
+
+            console.log(objJs);
+
+            socket.on('connect', function () {
+                socket.emit('get_subscription', objJs);
+            });
+
+            let timeout = -1;
+
+            socket.on('my_response', function (msg) {
+                if (timeout != -1) clearTimeout(timeout);
+
+                console.log("-----\r\n");
+                document.getElementById("spnLight").style.backgroundColor = "red";
+                timeout = setTimeout(function () {
+                    document.getElementById("spnLight").style.backgroundColor = "lightgrey";
+                }, 2000);
+                console.log(msg);
+            });
+        }
+
+        function disconnect() {
+            alert("disconnecting");
+
+            if (socket) {
+                socket.emit('close_connection', {});
+                setTimeout(function () {
+                    socket.close();
+                }, 2000);
+            }
+
+            socket = null;
+        }
+    </script>
+</head>
+
+<body>
+    <h3>WebSocket Demo</h3>
+    <form>
+        <table>
+            <tr>
+                <td>Select topic:</td>
+                <td>
+                    <select id="ddlTopic" name="ddlTopic">
+                        <option value="dcm_device_data">Device data</option>
+                        <option value="dcm_annotation_data">Annotation data</option>
+                    </select>
+                </td>
+            </tr>
+            <tr>
+                <td>Select role:</td>
+                <td>
+                    <select id="ddlRole" name="ddlRole">
+                        <option value="clinician">Clinician</option>
+                        <option value="admin">Admin</option>
+                    </select>
+                </td>
+            </tr>
+            <tr>
+                <td>Device ID:</td>
+                <td>
+                    <span style="color: gray"><i>425ebd56-49e8-4feb-aa8b-18814bae5ae8</i></span><br />
+                    <input type="text" id="txtDeviceId" name="txtDeviceId" value="425ebd56-49e8-4feb-aa8b-18814bae5ae8" />
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2">
+                    <input type="button" id="btnGo" value="Start websocket" onclick="connect();" />
+                    <input type="button" id="btnStop" value="Stop websocket" onclick="disconnect();" />
+                    Data available:
+                    <span id="spnLight" style="width:40px; height:40px; background-color: lightgrey;">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>
+                </td>
+            </tr>
+        </table>
+    </form>
+</body>
+
+</html>
+```
+
+### Explanation of Changes
+1. **Fixed HTML Tags**: Corrected syntax issues like missing `<` and mismatched tags.
+2. **WebSocket Initialization**: Ensured the WebSocket connection is correctly initiated with the namespace.
+3. **Timeout Correction**: Corrected the timeout setup to use the proper syntax.
+4. **Disconnection**: Fixed the disconnection logic to close the WebSocket properly.
+
+Make sure your Spring Boot application is running and that the WebSocket endpoint (`/ws`) is correctly configured to accept connections and process messages as defined in your Java code.
