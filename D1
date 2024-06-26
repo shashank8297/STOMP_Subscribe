@@ -468,3 +468,184 @@ Here's a sample `pom.xml` file for your Spring Boot application with dependencie
 3. **Access the WebSocket client** by opening the HTML file in a web browser.
 
 This `pom.xml` file should provide all the necessary dependencies to get your Spring Boot application working with Kafka and WebSocket integration.
+
+
+
+
+
+The error message "Handshake failed due to invalid Upgrade header: null" typically indicates that the WebSocket handshake failed because the server did not receive the correct headers required for establishing a WebSocket connection. This can happen for various reasons, including incorrect client-side configuration or server-side misconfigurations.
+
+Here are some steps to help troubleshoot and resolve this issue:
+
+### Step 1: Ensure Correct WebSocket Endpoint
+
+Ensure that the WebSocket endpoint is correctly defined in your `WebSocketConfig` class:
+
+```java
+package com.ge.streaming.config;
+
+import com.ge.streaming.handler.WebSocketHandler;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.web.socket.config.annotation.EnableWebSocket;
+import org.springframework.web.socket.config.annotation.WebSocketConfigurer;
+import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry;
+
+@Configuration
+@EnableWebSocket
+public class WebSocketConfig implements WebSocketConfigurer {
+
+    private final WebSocketHandler webSocketHandler;
+
+    public WebSocketConfig(WebSocketHandler webSocketHandler) {
+        this.webSocketHandler = webSocketHandler;
+    }
+
+    @Override
+    public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
+        registry.addHandler(webSocketHandler, "/ws").setAllowedOrigins("*");
+    }
+}
+```
+
+### Step 2: Ensure Client-Side WebSocket Connection
+
+Ensure that your HTML file is correctly trying to establish a WebSocket connection to the right endpoint:
+
+```html
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>WebSocket Example</title>
+    <script src="//cdnjs.cloudflare.com/ajax/libs/socket.io/4.2.0/socket.io.js"></script>
+    <script>
+        let socket = null;
+
+        function connect() {
+            disconnect();
+
+            let namespace = '/ws';
+            socket = io(namespace);
+
+            let objTopic = document.getElementById("ddlTopic");
+            let objRole = document.getElementById("ddlRole");
+            let objDeviceId = document.getElementById("txtDeviceId");
+
+            let req_data = objTopic.options[objTopic.selectedIndex].value;
+            let role = objRole.options[objRole.selectedIndex].value;
+            let deviceId = objDeviceId.value;
+
+            let objJs = {
+                'required_data': [req_data],
+                'roles': [role],
+                'device_ids': [deviceId]
+            };
+
+            console.log(objJs);
+
+            socket.on('connect', function () {
+                socket.emit('get_subscription', objJs);
+            });
+
+            let timeout = -1;
+
+            socket.on('my_response', function (msg) {
+                if (timeout != -1) clearTimeout(timeout);
+
+                console.log("-----\r\n");
+                document.getElementById("spnLight").style.backgroundColor = "red";
+                timeout = setTimeout(function () {
+                    document.getElementById("spnLight").style.backgroundColor = "lightgrey";
+                }, 2000);
+                console.log(msg);
+            });
+        }
+
+        function disconnect() {
+            alert("disconnecting");
+
+            if (socket) {
+                socket.emit('close_connection', {});
+                setTimeout(function () {
+                    socket.close();
+                }, 2000);
+            }
+
+            socket = null;
+        }
+    </script>
+</head>
+
+<body>
+    <h3>WebSocket Demo</h3>
+    <form>
+        <table>
+            <tr>
+                <td>Select topic:</td>
+                <td>
+                    <select id="ddlTopic" name="ddlTopic">
+                        <option value="dcm_device_data">Device data</option>
+                        <option value="dcm_annotation_data">Annotation data</option>
+                    </select>
+                </td>
+            </tr>
+            <tr>
+                <td>Select role:</td>
+                <td>
+                    <select id="ddlRole" name="ddlRole">
+                        <option value="clinician">Clinician</option>
+                        <option value="admin">Admin</option>
+                    </select>
+                </td>
+            </tr>
+            <tr>
+                <td>Device ID:</td>
+                <td>
+                    <span style="color: gray"><i>425ebd56-49e8-4feb-aa8b-18814bae5ae8</i></span><br />
+                    <input type="text" id="txtDeviceId" name="txtDeviceId" value="425ebd56-49e8-4feb-aa8b-18814bae5ae8" />
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2">
+                    <input type="button" id="btnGo" value="Start websocket" onclick="connect();" />
+                    <input type="button" id="btnStop" value="Stop websocket" onclick="disconnect();" />
+                    Data available:
+                    <span id="spnLight" style="width:40px; height:40px; background-color: lightgrey;">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>
+                </td>
+            </tr>
+        </table>
+    </form>
+</body>
+
+</html>
+```
+
+### Step 3: Enable WebSocket in Application Properties
+
+Ensure that your Spring Boot application properties are correctly configured to enable WebSocket support. Typically, no additional properties are needed for basic WebSocket support, but make sure nothing is disabling it.
+
+### Step 4: Check for Reverse Proxy or Load Balancer
+
+If your application is behind a reverse proxy or load balancer (e.g., Nginx, Apache), ensure that it is configured to support WebSocket connections. For example, in Nginx, you would need the following configuration:
+
+```nginx
+location /ws {
+    proxy_pass http://localhost:8080/ws;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "Upgrade";
+    proxy_set_header Host $host;
+}
+```
+
+### Step 5: Test WebSocket Endpoint
+
+To confirm that the WebSocket endpoint is working correctly, you can use tools like [WebSocket King](https://websocketking.com/) to manually test the WebSocket connection:
+
+1. Open [WebSocket King](https://websocketking.com/).
+2. Enter the WebSocket URL: `ws://localhost:8080/ws`.
+3. Click "Connect".
+4. Verify that the connection is established successfully.
+
+By following these steps, you should be able to diagnose and resolve the "Handshake failed due to invalid Upgrade header" error and successfully establish a WebSocket connection with your Spring Boot application.
