@@ -1,0 +1,218 @@
+Setting up a Spring Boot application that integrates AWS MSK (Managed Streaming for Apache Kafka), AWS Kinesis, and WebSockets involves multiple steps. Here's an outline of the process and a simplified example to get you started:
+
+### Prerequisites
+1. **AWS Account**: Ensure you have access to AWS services.
+2. **AWS SDK and Permissions**: Make sure you have the necessary permissions to use MSK, Kinesis, and other AWS services.
+3. **Spring Boot Application**: Basic setup with necessary dependencies.
+
+### Dependencies
+Add the following dependencies to your `pom.xml` for a Spring Boot project:
+
+```xml
+<dependencies>
+    <!-- Spring Boot dependencies -->
+    <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-web</artifactId>
+    </dependency>
+    <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-websocket</artifactId>
+    </dependency>
+    <dependency>
+        <groupId>org.springframework.kafka</groupId>
+        <artifactId>spring-kafka</artifactId>
+    </dependency>
+    <dependency>
+        <groupId>software.amazon.awssdk</groupId>
+        <artifactId>kinesis</artifactId>
+    </dependency>
+    <dependency>
+        <groupId>software.amazon.msk</groupId>
+        <artifactId>msk</artifactId>
+    </dependency>
+</dependencies>
+```
+
+### Application Setup
+
+#### 1. Kafka Consumer to read from MSK
+
+```java
+package com.example.demo.kafka;
+
+import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.springframework.kafka.annotation.KafkaListener;
+import org.springframework.stereotype.Service;
+import software.amazon.awssdk.services.kinesis.KinesisClient;
+import software.amazon.awssdk.services.kinesis.model.PutRecordRequest;
+
+import java.nio.ByteBuffer;
+
+@Service
+public class KafkaConsumerService {
+
+    private final KinesisClient kinesisClient;
+    private final String streamName = "your-kinesis-stream-name";
+
+    public KafkaConsumerService(KinesisClient kinesisClient) {
+        this.kinesisClient = kinesisClient;
+    }
+
+    @KafkaListener(topics = "your-kafka-topic", groupId = "your-group-id")
+    public void consume(ConsumerRecord<String, String> record) {
+        String message = record.value();
+        sendToKinesis(message);
+    }
+
+    private void sendToKinesis(String message) {
+        PutRecordRequest request = PutRecordRequest.builder()
+                .streamName(streamName)
+                .partitionKey("partitionKey")
+                .data(ByteBuffer.wrap(message.getBytes()))
+                .build();
+
+        kinesisClient.putRecord(request);
+    }
+}
+```
+
+#### 2. Kinesis Consumer to stream data to WebSocket
+
+```java
+package com.example.demo.kinesis;
+
+import org.springframework.stereotype.Service;
+import org.springframework.web.socket.TextMessage;
+import org.springframework.web.socket.WebSocketSession;
+import software.amazon.awssdk.services.kinesis.KinesisClient;
+import software.amazon.awssdk.services.kinesis.model.GetRecordsRequest;
+import software.amazon.awssdk.services.kinesis.model.GetRecordsResponse;
+import software.amazon.awssdk.services.kinesis.model.GetShardIteratorRequest;
+
+import java.io.IOException;
+import java.util.concurrent.Executors;
+
+@Service
+public class KinesisConsumerService {
+
+    private final KinesisClient kinesisClient;
+    private final WebSocketSession webSocketSession;
+    private final String streamName = "your-kinesis-stream-name";
+
+    public KinesisConsumerService(KinesisClient kinesisClient, WebSocketSession webSocketSession) {
+        this.kinesisClient = kinesisClient;
+        this.webSocketSession = webSocketSession;
+        startConsuming();
+    }
+
+    private void startConsuming() {
+        Executors.newSingleThreadExecutor().submit(() -> {
+            String shardIterator = getShardIterator();
+            while (true) {
+                GetRecordsRequest getRecordsRequest = GetRecordsRequest.builder()
+                        .shardIterator(shardIterator)
+                        .build();
+
+                GetRecordsResponse recordsResponse = kinesisClient.getRecords(getRecordsRequest);
+                recordsResponse.records().forEach(record -> {
+                    try {
+                        webSocketSession.sendMessage(new TextMessage(new String(record.data().asByteArray())));
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+                });
+
+                shardIterator = recordsResponse.nextShardIterator();
+                try {
+                    Thread.sleep(1000);  // 1 second delay to ensure real-time streaming
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+        });
+    }
+
+    private String getShardIterator() {
+        GetShardIteratorRequest request = GetShardIteratorRequest.builder()
+                .streamName(streamName)
+                .shardId("shardId-000000000000")
+                .shardIteratorType("LATEST")
+                .build();
+
+        return kinesisClient.getShardIterator(request).shardIterator();
+    }
+}
+```
+
+#### 3. WebSocket Configuration
+
+```java
+package com.example.demo.websocket;
+
+import org.springframework.context.annotation.Configuration;
+import org.springframework.web.socket.config.annotation.EnableWebSocket;
+import org.springframework.web.socket.config.annotation.WebSocketConfigurer;
+import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry;
+
+@Configuration
+@EnableWebSocket
+public class WebSocketConfig implements WebSocketConfigurer {
+
+    private final WebSocketHandler webSocketHandler;
+
+    public WebSocketConfig(WebSocketHandler webSocketHandler) {
+        this.webSocketHandler = webSocketHandler;
+    }
+
+    @Override
+    public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
+        registry.addHandler(webSocketHandler, "/websocket-endpoint").setAllowedOrigins("*");
+    }
+}
+```
+
+#### 4. WebSocket Handler
+
+```java
+package com.example.demo.websocket;
+
+import org.springframework.stereotype.Component;
+import org.springframework.web.socket.TextMessage;
+import org.springframework.web.socket.WebSocketHandler;
+import org.springframework.web.socket.WebSocketSession;
+import org.springframework.web.socket.handler.TextWebSocketHandler;
+
+@Component
+public class WebSocketHandler extends TextWebSocketHandler {
+
+    @Override
+    public void afterConnectionEstablished(WebSocketSession session) throws Exception {
+        // You can store the session and use it to send data later
+        System.out.println("WebSocket connection established");
+    }
+
+    @Override
+    protected void handleTextMessage(WebSocketSession session, TextMessage message) throws Exception {
+        // Handle incoming messages from the WebSocket client
+        String payload = message.getPayload();
+        System.out.println("Received: " + payload);
+        session.sendMessage(new TextMessage("Server received: " + payload));
+    }
+}
+```
+
+### AWS Configuration
+- Ensure you have the necessary AWS resources set up:
+  - **MSK Cluster**: Set up a Kafka cluster on AWS MSK.
+  - **Kinesis Stream**: Create a Kinesis Data Stream.
+  - **IAM Roles**: Assign necessary permissions to access MSK and Kinesis from your application.
+
+### Running the Application
+1. **Kafka Producer**: Send messages to the Kafka topic in MSK.
+2. **Spring Boot Application**: Run the Spring Boot application. It will consume messages from MSK, send them to Kinesis, and stream them to WebSocket clients in real-time.
+3. **WebSocket Client**: Connect to the WebSocket endpoint (`/websocket-endpoint`) and subscribe to receive messages.
+
+This setup provides a streamlined data flow from MSK to Kinesis and then to WebSocket clients, ensuring real-time data streaming. Fine-tuning may be necessary based on specific requirements and use cases.
+
+
