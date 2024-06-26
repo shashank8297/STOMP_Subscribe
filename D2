@@ -225,3 +225,195 @@ http://localhost:8080/index.html
 ```
 
 You should now be able to connect to the WebSocket, send messages, subscribe, and see the responses in the browser.
+
+
+
+
+Got it. Let's remove the Kafka references and ensure the application is set up correctly with WebSocket and STOMP. Here’s how you can set up your Spring Boot application:
+
+### HTML Page
+
+We'll update the HTML page to include buttons that trigger the respective methods in the controller.
+
+#### index.html
+
+```html
+<!DOCTYPE html>
+<html>
+<head>
+    <title>STOMP WebSocket Example</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/sockjs-client/1.5.2/sockjs.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/stomp.js/2.3.3/stomp.min.js"></script>
+    <script>
+        let stompClient = null;
+
+        function connect() {
+            const socket = new SockJS('/ws');
+            stompClient = Stomp.over(socket);
+            stompClient.connect({}, function (frame) {
+                console.log('Connected: ' + frame);
+
+                stompClient.subscribe('/topic/messages', function (message) {
+                    showMessage(message.body);
+                });
+            });
+        }
+
+        function disconnect() {
+            if (stompClient !== null) {
+                stompClient.disconnect();
+            }
+            console.log("Disconnected");
+        }
+
+        function sendMessage() {
+            stompClient.send("/app/send", {}, "Static message from send");
+        }
+
+        function subscribeService() {
+            stompClient.send("/app/subscribe", {}, "Static message from subscribe");
+        }
+
+        function unsubscribeService() {
+            stompClient.send("/app/unsubscribe", {}, "Static message from unsubscribe");
+        }
+
+        function showMessage(message) {
+            const response = document.getElementById('response');
+            response.innerHTML += "<tr><td>" + message + "</td></tr>";
+        }
+    </script>
+</head>
+<body>
+    <div>
+        <button id="connect" onclick="connect()">Connect</button>
+        <button id="disconnect" onclick="disconnect()">Disconnect</button>
+    </div>
+    <div>
+        <button id="send" onclick="sendMessage()">Send</button>
+    </div>
+    <div>
+        <button id="subscribe" onclick="subscribeService()">Subscribe</button>
+    </div>
+    <div>
+        <button id="unsubscribe" onclick="unsubscribeService()">Unsubscribe</button>
+    </div>
+    <table>
+        <thead>
+            <tr>
+                <th>Messages</th>
+            </tr>
+        </thead>
+        <tbody id="response"></tbody>
+    </table>
+</body>
+</html>
+```
+
+### WebSocket Controller
+
+Ensure the controller handles each action and sends a static message back to the frontend.
+
+#### WebSocketController.java
+
+```java
+package com.ge.streaming.controller;
+
+import org.springframework.messaging.handler.annotation.MessageMapping;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
+import org.springframework.stereotype.Controller;
+
+@Controller
+public class WebSocketController {
+
+    private final SimpMessagingTemplate messagingTemplate;
+
+    public WebSocketController(SimpMessagingTemplate messagingTemplate) {
+        this.messagingTemplate = messagingTemplate;
+    }
+
+    @MessageMapping("/send")
+    public void sendMessage() {
+        messagingTemplate.convertAndSend("/topic/messages", "Static message from send method");
+    }
+
+    @MessageMapping("/subscribe")
+    public void subscribe() {
+        messagingTemplate.convertAndSend("/topic/messages", "Static message from subscribe method");
+    }
+
+    @MessageMapping("/unsubscribe")
+    public void unsubscribe() {
+        messagingTemplate.convertAndSend("/topic/messages", "Static message from unsubscribe method");
+    }
+}
+```
+
+### WebSocket Configuration
+
+Ensure your WebSocket configuration is correctly set up.
+
+#### WebSocketConfig.java
+
+```java
+package com.ge.streaming.config;
+
+import org.springframework.context.annotation.Configuration;
+import org.springframework.messaging.simp.config.MessageBrokerRegistry;
+import org.springframework.web.socket.config.annotation.EnableWebSocketMessageBroker;
+import org.springframework.web.socket.config.annotation.StompEndpointRegistry;
+import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerConfigurer;
+
+@Configuration
+@EnableWebSocketMessageBroker
+public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
+
+    @Override
+    public void configureMessageBroker(MessageBrokerRegistry config) {
+        config.enableSimpleBroker("/topic", "/queue");
+        config.setApplicationDestinationPrefixes("/app");
+    }
+
+    @Override
+    public void registerStompEndpoints(StompEndpointRegistry registry) {
+        registry.addEndpoint("/ws").setAllowedOrigins("*").withSockJS();
+    }
+}
+```
+
+### Application Entry Point
+
+Ensure your Spring Boot application entry point is correctly set up.
+
+#### StreamingApplication.java
+
+```java
+package com.ge.streaming;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+
+@SpringBootApplication
+public class StreamingApplication {
+
+    public static void main(String[] args) {
+        SpringApplication.run(StreamingApplication.class, args);
+    }
+}
+```
+
+### Running the Application
+
+Start your Spring Boot application:
+
+```sh
+mvn spring-boot:run
+```
+
+Then open your web browser and navigate to:
+
+```
+http://localhost:8080/index.html
+```
+
+You should now be able to connect to the WebSocket, send messages, subscribe, unsubscribe, and see the responses in the browser. Each button click will trigger the respective method in the controller and send a static message to the frontend.
