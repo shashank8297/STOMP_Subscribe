@@ -1,0 +1,227 @@
+To create a Spring Boot application that uses STOMP over WebSockets, you'll need to set up the WebSocket configuration, a controller to handle the WebSocket messages, and an HTML page to interact with the WebSocket server.
+
+### Step 1: WebSocket Configuration
+
+First, set up the WebSocket configuration.
+
+#### WebSocketConfig.java
+
+```java
+package com.ge.streaming.config;
+
+import org.springframework.context.annotation.Configuration;
+import org.springframework.messaging.simp.config.MessageBrokerRegistry;
+import org.springframework.web.socket.config.annotation.EnableWebSocketMessageBroker;
+import org.springframework.web.socket.config.annotation.StompEndpointRegistry;
+import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerConfigurer;
+
+@Configuration
+@EnableWebSocketMessageBroker
+public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
+
+    @Override
+    public void configureMessageBroker(MessageBrokerRegistry config) {
+        config.enableSimpleBroker("/topic", "/queue");
+        config.setApplicationDestinationPrefixes("/app");
+    }
+
+    @Override
+    public void registerStompEndpoints(StompEndpointRegistry registry) {
+        registry.addEndpoint("/ws").setAllowedOrigins("*").withSockJS();
+    }
+}
+```
+
+### Step 2: WebSocket Controller
+
+Next, create a controller to handle WebSocket messages.
+
+#### WebSocketController.java
+
+```java
+package com.ge.streaming.controller;
+
+import org.springframework.messaging.handler.annotation.MessageMapping;
+import org.springframework.messaging.handler.annotation.SendTo;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
+import org.springframework.stereotype.Controller;
+
+@Controller
+public class WebSocketController {
+
+    private final SimpMessagingTemplate messagingTemplate;
+
+    public WebSocketController(SimpMessagingTemplate messagingTemplate) {
+        this.messagingTemplate = messagingTemplate;
+    }
+
+    @MessageMapping("/send")
+    @SendTo("/topic/messages")
+    public String sendMessage(String message) {
+        return message;
+    }
+
+    @MessageMapping("/subscribe")
+    public void subscribe(String message) {
+        // Logic for subscribe service
+        messagingTemplate.convertAndSend("/topic/subscriptions", message);
+    }
+
+    @MessageMapping("/unsubscribe")
+    public void unsubscribe(String message) {
+        // Logic for unsubscribe service
+    }
+
+    @MessageMapping("/connect")
+    public void connect(String message) {
+        // Logic for connect service
+    }
+
+    @MessageMapping("/disconnect")
+    public void disconnect(String message) {
+        // Logic for disconnect service
+    }
+}
+```
+
+### Step 3: HTML Page
+
+Create an HTML page with STOMP.js to interact with the WebSocket server.
+
+#### index.html
+
+Place this file in `src/main/resources/static/index.html`.
+
+```html
+<!DOCTYPE html>
+<html>
+<head>
+    <title>STOMP WebSocket Example</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/sockjs-client/1.5.2/sockjs.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/stomp.js/2.3.3/stomp.min.js"></script>
+    <script>
+        let stompClient = null;
+
+        function connect() {
+            const socket = new SockJS('/ws');
+            stompClient = Stomp.over(socket);
+            stompClient.connect({}, function (frame) {
+                console.log('Connected: ' + frame);
+
+                stompClient.subscribe('/topic/messages', function (message) {
+                    showMessage(message.body);
+                });
+
+                stompClient.subscribe('/topic/subscriptions', function (message) {
+                    showSubscription(message.body);
+                });
+            });
+        }
+
+        function disconnect() {
+            if (stompClient !== null) {
+                stompClient.disconnect();
+            }
+            console.log("Disconnected");
+        }
+
+        function sendMessage() {
+            const message = document.getElementById('message').value;
+            stompClient.send("/app/send", {}, message);
+        }
+
+        function subscribeService() {
+            const subscription = document.getElementById('subscription').value;
+            stompClient.send("/app/subscribe", {}, subscription);
+        }
+
+        function showMessage(message) {
+            const response = document.getElementById('response');
+            response.innerHTML += "<tr><td>" + message + "</td></tr>";
+        }
+
+        function showSubscription(subscription) {
+            const subs = document.getElementById('subscriptions');
+            subs.innerHTML += "<tr><td>" + subscription + "</td></tr>";
+        }
+    </script>
+</head>
+<body>
+    <div>
+        <button onclick="connect()">Connect</button>
+        <button onclick="disconnect()">Disconnect</button>
+    </div>
+    <div>
+        <input type="text" id="message" placeholder="Enter message">
+        <button onclick="sendMessage()">Send</button>
+    </div>
+    <div>
+        <input type="text" id="subscription" placeholder="Enter subscription">
+        <button onclick="subscribeService()">Subscribe</button>
+    </div>
+    <table>
+        <thead>
+            <tr>
+                <th>Messages</th>
+            </tr>
+        </thead>
+        <tbody id="response"></tbody>
+    </table>
+    <table>
+        <thead>
+            <tr>
+                <th>Subscriptions</th>
+            </tr>
+        </thead>
+        <tbody id="subscriptions"></tbody>
+    </table>
+</body>
+</html>
+```
+
+### Step 4: Application Entry Point
+
+Ensure your Spring Boot application entry point is properly set up.
+
+#### KafkaConsumerApplication.java
+
+```java
+package com.ge.streaming;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+
+@SpringBootApplication
+public class KafkaConsumerApplication {
+
+    public static void main(String[] args) {
+        SpringApplication.run(KafkaConsumerApplication.class, args);
+    }
+}
+```
+
+### Step 5: Application Properties
+
+Ensure your `application.properties` file has the necessary configuration.
+
+#### application.properties
+
+```properties
+server.port=8080
+```
+
+### Step 6: Running the Application
+
+Start your Spring Boot application:
+
+```sh
+mvn spring-boot:run
+```
+
+Then open your web browser and navigate to:
+
+```
+http://localhost:8080/index.html
+```
+
+You should now be able to connect to the WebSocket, send messages, subscribe, and see the responses in the browser.
