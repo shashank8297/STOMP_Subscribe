@@ -484,6 +484,10 @@ public class WebSocketConfig implements WebSocketConfigurer {
 }
 ```
 
+Certainly! Let's continue with the implementation of the WebSocket handler and complete the setup.
+
+### Step 7: Set Up WebSocket Configuration (Continued)
+
 #### 7.2 Implement WebSocket Handler
 Create a WebSocket handler to manage WebSocket connections and messages:
 
@@ -492,9 +496,87 @@ package com.example.demo.websocket;
 
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.TextMessage;
-import org.springframework.web.socket.WebSocketHandler;
 import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
 
 @Component
-public class
+public class WebSocketHandler extends TextWebSocketHandler {
+
+    @Override
+    public void afterConnectionEstablished(WebSocketSession session) throws Exception {
+        // Store the session and use it to send data later
+        System.out.println("WebSocket connection established");
+    }
+
+    @Override
+    protected void handleTextMessage(WebSocketSession session, TextMessage message) throws Exception {
+        // Handle incoming messages from the WebSocket client
+        String payload = message.getPayload();
+        System.out.println("Received: " + payload);
+        session.sendMessage(new TextMessage("Server received: " + payload));
+    }
+}
+```
+
+### Step 8: Verifying the Setup
+
+#### 8.1 Send Data to MSK
+Ensure your Kafka producer is sending data to the Kafka topic in MSK. This can be done using a simple Kafka producer application or a command-line tool.
+
+#### 8.2 Run Your Spring Boot Application
+Start your Spring Boot application. It should begin consuming messages from MSK, sending them to Kinesis, and then streaming them via WebSocket.
+
+#### 8.3 WebSocket Client
+Use a WebSocket client (such as a web application, Postman, or a simple JavaScript client) to connect to the WebSocket endpoint (`/websocket-endpoint`) and verify that you receive data in real-time.
+
+### Example WebSocket Client (JavaScript)
+
+You can use the following JavaScript code to test the WebSocket connection:
+
+```html
+<!DOCTYPE html>
+<html>
+<head>
+    <title>WebSocket Client</title>
+</head>
+<body>
+    <h1>WebSocket Client</h1>
+    <button onclick="connect()">Connect</button>
+    <button onclick="disconnect()">Disconnect</button>
+    <div id="messages"></div>
+
+    <script>
+        var ws;
+
+        function connect() {
+            ws = new WebSocket('ws://localhost:8080/websocket-endpoint');
+
+            ws.onopen = function() {
+                document.getElementById('messages').innerHTML += '<p>Connected</p>';
+            };
+
+            ws.onmessage = function(event) {
+                document.getElementById('messages').innerHTML += '<p>Message: ' + event.data + '</p>';
+            };
+
+            ws.onclose = function() {
+                document.getElementById('messages').innerHTML += '<p>Disconnected</p>';
+            };
+        }
+
+        function disconnect() {
+            if (ws) {
+                ws.close();
+            }
+        }
+    </script>
+</body>
+</html>
+```
+
+### Final Steps
+
+1. **Deploy and Test**: Deploy your Spring Boot application to an appropriate environment (e.g., an EC2 instance) and test the entire data flow from MSK to Kinesis to WebSocket.
+2. **Monitor and Optimize**: Monitor the performance of your application and optimize the configurations based on the load and performance requirements.
+
+This setup provides a comprehensive pipeline for real-time data streaming from MSK to AWS Kinesis and then to WebSocket clients, ensuring low-latency data delivery.
