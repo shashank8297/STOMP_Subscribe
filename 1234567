@@ -1,0 +1,156 @@
+package com.gehealthcare.mps.streaming.controller;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.messaging.handler.annotation.MessageMapping;
+import org.springframework.messaging.handler.annotation.Payload;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
+import org.springframework.stereotype.Controller;
+import org.springframework.web.bind.annotation.RequestBody;
+
+import com.gehealthcare.mps.streaming.controller.data.IRestResponse;
+import com.gehealthcare.mps.streaming.service.session.SessionServiceFactory;
+import com.gehealthcare.mps.streaming.service.ws.WSRequest;
+import com.gehealthcare.mps.streaming.service.ws.WSServiceFactory;
+
+import jakarta.servlet.http.HttpServletResponse;
+
+@Controller
+public class WebSocketController {
+
+	private final SimpMessagingTemplate messagingTemplate;
+
+	@Autowired
+	private SessionServiceFactory serviceServiceFactory;
+
+	@Autowired
+	private WSServiceFactory wsServiceFactory;
+
+	public WebSocketController(SimpMessagingTemplate messagingTemplate) {
+		this.messagingTemplate = messagingTemplate;
+	}
+
+	/*
+	 * @MessageMapping("/send") public ResponseEntity<IRestResponse>
+	 * send(@RequestBody WSRequest wsRequest, HttpServletResponse
+	 * httpServletResponse) { try { IRestResponse data =
+	 * wsServiceFactory.getInstance(wsRequest.getRequestType().toLowerCase())
+	 * .process(wsRequest); if (data == null) return new ResponseEntity(null,
+	 * HttpStatus.NO_CONTENT);
+	 * 
+	 * return ResponseEntity.ok(data); } catch (Exception e) { return new
+	 * ResponseEntity(e, HttpStatus.INTERNAL_SERVER_ERROR); } }
+	 */
+
+	@MessageMapping("/send")
+	public void sendMessage(@Payload WSRequest wsRequest) {
+		try {
+			IRestResponse data = wsServiceFactory.getInstance(wsRequest.getRequestType().toLowerCase())
+					.process(wsRequest);
+
+			if (data == null) {
+				messagingTemplate.convertAndSend("/topic/messages", "--null--");
+			} else {
+				messagingTemplate.convertAndSend("/topic/messages", "Static message from send method");
+			}
+		} catch (Exception e) {
+			// return new ResponseEntity(e, HttpStatus.INTERNAL_SERVER_ERROR);
+			messagingTemplate.convertAndSend("/topic/messages", "Interal server error: " + e.getMessage());
+
+		}
+	}
+
+	@MessageMapping("/subscribe")
+	public void subscribe(@Payload WSRequest wsRequest) {
+		try {
+			IRestResponse data = wsServiceFactory.getInstance(wsRequest.getRequestType().toLowerCase())
+					.process(wsRequest);
+
+			if (data == null) {
+				messagingTemplate.convertAndSend("/topic/messages", "--null--");
+			} else {
+				messagingTemplate.convertAndSend("/topic/messages", "Static message from subscribe method");
+			}
+		} catch (Exception e) {
+			// return new ResponseEntity(e, HttpStatus.INTERNAL_SERVER_ERROR);
+			messagingTemplate.convertAndSend("/topic/messages", "Interal server error: " + e.getMessage());
+
+		}
+	}
+
+	@MessageMapping("/unsubscribe")
+	public void unsubscribe(@Payload WSRequest wsRequest) {
+		try {
+			IRestResponse data = wsServiceFactory.getInstance(wsRequest.getRequestType().toLowerCase())
+					.process(wsRequest);
+
+			if (data == null) {
+				messagingTemplate.convertAndSend("/topic/messages", "--null--");
+			} else {
+				messagingTemplate.convertAndSend("/topic/messages", "Static message from unsubscribe method");
+			}
+		} catch (Exception e) {
+			// return new ResponseEntity(e, HttpStatus.INTERNAL_SERVER_ERROR);
+			messagingTemplate.convertAndSend("/topic/messages", "Interal server error: " + e.getMessage());
+
+		}
+	}
+}
+
+
+package com.gehealthcare.mps.streaming.service.ws;
+
+import java.util.HashMap;
+import java.util.Map;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Component;
+
+/**
+ * 
+ */
+@Component
+public class WSServiceFactory {
+
+	public WSServiceFactory() {
+		super();
+		requestTypeMap = new HashMap<>();
+		requestTypeMap.put("subscribe", "wsSubscriptionService");
+		requestTypeMap.put("send", "wsSendService");
+		requestTypeMap.put("unsubscribe", "WsUnsubscriptionService");
+	}
+
+	@Autowired
+	private Map<String, WSService> typesMap;
+	private Map<String, String> requestTypeMap ;
+
+	public WSService getInstance(String type) {
+		return typesMap.get(requestTypeMap.get(type));
+	}
+
+}
+package com.gehealthcare.mps.streaming.service.ws;
+
+import org.springframework.stereotype.Service;
+
+import com.gehealthcare.mps.streaming.controller.data.IRestResponse;
+import com.gehealthcare.mps.streaming.controller.data.DataResponse;
+import com.gehealthcare.mps.streaming.controller.data.SessionRequest;
+
+/**
+ * 
+ */
+@Service(value = "wsSendService")
+public class WSSendService implements WSService {
+
+	@Override
+	public IRestResponse process(WSRequest wsRequest) {
+		
+		SubscriptionResponse subscriptionResponse = new SubscriptionResponse();
+		subscriptionResponse.setResult("Static message from send method");
+		System.out.println("--SEND--");
+		return subscriptionResponse;
+	}
+
+}
