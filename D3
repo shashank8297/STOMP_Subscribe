@@ -154,3 +154,131 @@ public class WSSendService implements WSService {
 	}
 
 }
+
+
+
+
+
+
+To modify your HTML and JavaScript code so that clicking the "Connect" button starts a WebSocket connection, generates a UUID, and uses this UUID for subscribe and unsubscribe operations, while ensuring the UUID is invalidated on disconnect, you can integrate the following changes:
+
+```html
+<!DOCTYPE html>
+<html>
+<head>
+    <title>STOMP WebSocket Example</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/sockjs-client/1.5.2/sockjs.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/stomp.js/2.3.3/stomp.min.js"></script>
+    <script>
+        let stompClient = null;
+        let sessionId = null;
+
+        function connect() {
+            const socket = new SockJS('/ws');
+            stompClient = Stomp.over(socket);
+            
+            // Generate a UUID for session ID
+            sessionId = generateUUID();
+            
+            stompClient.connect({}, function (frame) {
+                console.log('Connected: ' + frame);
+
+                stompClient.subscribe('/topic/messages', function (message) {
+                    showMessage(message.body);
+                });
+            });
+        }
+
+        function disconnect() {
+            if (stompClient !== null) {
+                stompClient.disconnect();
+                // Invalidate session ID on disconnect
+                sessionId = null;
+            }
+            console.log("Disconnected");
+        }
+
+        function sendMessage() {
+            if (!sessionId) {
+                console.error("Not connected. Please connect first.");
+                return;
+            }
+            const message = { requestType: "SEND", sessionId: sessionId };
+            stompClient.send("/app/send", {}, JSON.stringify(message));
+        }
+
+        function subscribeService() {
+            if (!sessionId) {
+                console.error("Not connected. Please connect first.");
+                return;
+            }
+            const message = { requestType: "SUBSCRIBE", sessionId: sessionId };
+            stompClient.send("/app/subscribe", {}, JSON.stringify(message));
+        }
+
+        function unsubscribeService() {
+            if (!sessionId) {
+                console.error("Not connected. Please connect first.");
+                return;
+            }
+            const message = { requestType: "UNSUBSCRIBE", sessionId: sessionId };
+            stompClient.send("/app/unsubscribe", {}, JSON.stringify(message));
+        }
+
+        function showMessage(message) {
+            const response = document.getElementById('response');
+            response.innerHTML += "<tr><td>" + message + "</td></tr>";
+        }
+
+        function generateUUID() {
+            return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+                var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+                return v.toString(16);
+            });
+        }
+    </script>
+</head>
+<body>
+    <div>
+        <button id="connect" onclick="connect()">Connect</button>
+        <button id="disconnect" onclick="disconnect()">Disconnect</button>
+    </div>
+    <div>
+        <button id="send" onclick="sendMessage()">Send</button>
+    </div>
+    <div>
+        <button id="subscribe" onclick="subscribeService()">Subscribe</button>
+    </div>
+    <div>
+        <button id="unsubscribe" onclick="unsubscribeService()">Unsubscribe</button>
+    </div>
+    <table>
+        <thead>
+            <tr>
+                <th>Messages</th>
+            </tr>
+        </thead>
+        <tbody id="response"></tbody>
+    </table>
+</body>
+</html>
+```
+
+### Explanation:
+
+1. **Session ID Generation:**
+   - When the `connect()` function is invoked, it generates a UUID using the `generateUUID()` function and assigns it to the `sessionId` variable.
+
+2. **WebSocket Connection:**
+   - The WebSocket connection is established using the generated `sessionId` as a unique identifier for the session.
+
+3. **Send, Subscribe, and Unsubscribe Operations:**
+   - Each operation (`sendMessage()`, `subscribeService()`, `unsubscribeService()`) checks if `sessionId` is valid (not null) before sending the message with the `requestType` and `sessionId` as JSON parameters.
+
+4. **Disconnect Handling:**
+   - The `disconnect()` function disconnects the WebSocket connection and invalidates the `sessionId` by setting it to `null`.
+
+5. **Error Handling:**
+   - Error messages are logged to the console if operations are attempted without a valid `sessionId`.
+
+This setup ensures that your frontend interacts with the WebSocket server correctly, using a unique session ID for subscribe and unsubscribe operations, and handles connection lifecycle events effectively. Adjust the UUID generation method (`generateUUID()`) based on your specific requirements or use a more secure method for generating session IDs in production environments.
