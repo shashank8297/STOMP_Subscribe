@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+	<title>STOMP WebSocket Example</title>
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/sockjs-client/1.5.2/sockjs.min.js"></script>
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/stomp.js/2.3.3/stomp.min.js"></script>
+	<script>
+		let stompClient = null;
+		let sessionId = null;
+
+		function connect() {
+			const socket = new SockJS('/ws');
+			stompClient = Stomp.over(socket);
+
+			// Generate a UUID for session ID
+			sessionId = generateUUID();
+
+			const conn = stompClient.connect({}, function (frame) {
+				console.log('Connected: ' + frame);
+
+				stompClient.subscribe('/topic/messages', function (message) {
+					showMessage(message.body);
+				});
+				setTimeout(connectionToBack(), 1000);
+			});
+
+
+		}
+
+		function connectionToBack() {
+			const message = {requestType: "CONNECT", sessionId: sessionId};
+			console.log("Session ID: " + sessionId);
+			stompClient.send("/app/WebSocket", {}, JSON.stringify(message));
+		}
+
+		function disconnect() {
+			const message = {requestType: "DISCONNECT", sessionId: sessionId};
+			console.log("Session ID: " + sessionId);
+			stompClient.send("/app/WebSocket", {}, JSON.stringify(message));
+			if (stompClient !== null) {
+				stompClient.disconnect();
+				// Invalidate session ID on disconnect
+				sessionId = null;
+			}
+
+			console.log("Disconnected");
+		}
+
+		function sendMessage() {
+			if (!sessionId) {
+				console.error("Not connected. Please connect first.");
+				return;
+			}
+			const message = {
+				requestType: "SEND",
+				sessionId: sessionId,
+				topics: [
+					"dcs.device.data",
+					"dcs.device.event"
+				]
+			};
+			stompClient.send("/app/WebSocket", {}, JSON.stringify(message));
+		}
+
+		function subscribeService() {
+			if (!sessionId) {
+				console.error("Not connected. Please connect first.");
+				return;
+			}
+			const message = {requestType: "SUBSCRIBE", sessionId: sessionId};
+			console.log("Session ID: " + sessionId);
+			stompClient.send("/app/WebSocket", {}, JSON.stringify(message));
+		}
+
+		function unsubscribeService() {
+			if (!sessionId) {
+				console.error("Not connected. Please connect first.");
+				return;
+			}
+			const message = {requestType: "UNSUBSCRIBE", sessionId: sessionId};
+			stompClient.send("/app/WebSocket", {}, JSON.stringify(message));
+		}
+
+		function showMessage(message) {
+			const response = document.getElementById('response');
+			response.innerHTML += "<tr><td>" + message + "</td></tr>";
+		}
+
+		function generateUUID() {
+			return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+				var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+				return v.toString(16);
+			});
+		}
+	</script>
+</head>
+
+<body>
+	<div>
+		<button id="connect" onclick="connect()">Connect</button>
+		<button id="disconnect" onclick="disconnect()">Disconnect</button>
+	</div>
+	<div>
+		<button id="send" onclick="sendMessage()">Send</button>
+	</div>
+	<div>
+		<button id="subscribe" onclick="subscribeService()">Subscribe</button>
+	</div>
+	<div>
+		<button id="unsubscribe" onclick="unsubscribeService()">Unsubscribe</button>
+	</div>
+	<table>
+		<thead>
+			<tr>
+				<th>Messages</th>
+			</tr>
+		</thead>
+		<tbody id="response"></tbody>
+	</table>
+</body>
+
+</html>
+
+
+
+    package com.gehealthcare.mps.streaming.controller;
+
+import java.security.KeyStore.Entry;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.cache.Cache;
+import org.springframework.cache.CacheManager;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.CachePut;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.messaging.handler.annotation.MessageMapping;
+import org.springframework.messaging.handler.annotation.Payload;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
+import org.springframework.stereotype.Controller;
+import org.springframework.web.bind.annotation.RequestBody;
+
+import com.gehealthcare.mps.streaming.controller.data.IRestResponse;
+import com.gehealthcare.mps.streaming.service.session.SessionServiceFactory;
+import com.gehealthcare.mps.streaming.service.ws.WSRequest;
+import com.gehealthcare.mps.streaming.service.ws.WSServiceFactory;
+
+import jakarta.servlet.http.HttpServletResponse;
+
+@Controller
+public class WebSocketController {
+
+	private final CacheManager cacheManager;
+
+	private final SimpMessagingTemplate messagingTemplate;
+
+	@Autowired
+	private SessionServiceFactory serviceServiceFactory;
+
+	@Autowired
+	private WSServiceFactory wsServiceFactory;
+
+	public WebSocketController(SimpMessagingTemplate messagingTemplate, CacheManager cacheManager) {
+		this.cacheManager = cacheManager;
+		this.messagingTemplate = messagingTemplate;
+	}
+
+	@MessageMapping("/WebSocket")
+	public void sendMessage(@Payload WSRequest wsRequest) {
+		try {
+			IRestResponse data = wsServiceFactory.getInstance(wsRequest.getRequestType().toLowerCase())
+					.process(wsRequest);
+
+		} catch (Exception e) {
+			// return new ResponseEntity(e, HttpStatus.INTERNAL_SERVER_ERROR);
+			messagingTemplate.convertAndSend("/topic/messages", "Interal server error: " + e.getMessage());
+
+		}
+	}
+}
+
+package com.gehealthcare.mps.streaming.service.ws;
+
+import java.util.HashMap;
+import java.util.Map;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Component;
+
+/**
+ * 
+ */
+@Component
+public class WSServiceFactory {
+
+	public WSServiceFactory() {
+		super();
+		requestTypeMap = new HashMap<>();
+		requestTypeMap.put("subscribe", "wsSubscriptionService");
+		requestTypeMap.put("send", "wsSendService");
+		requestTypeMap.put("unsubscribe", "wsUnsubscriptionService");
+		requestTypeMap.put("connect", "wsConnectService");
+		requestTypeMap.put("disconnect", "wsDisconnectService");
+	}
+
+	@Autowired
+	private Map<String, WSService> typesMap;
+	private Map<String, String> requestTypeMap ;
+
+	public WSService getInstance(String type) {
+		return typesMap.get(requestTypeMap.get(type));
+	}
+
+}
+
+
+package com.gehealthcare.mps.streaming.service.ws;
+
+import org.springframework.cache.CacheManager;
+import org.springframework.cache.annotation.CachePut;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
+import org.springframework.stereotype.Service;
+
+import java.util.Map;
+
+import org.springframework.cache.Cache;
+
+import com.gehealthcare.mps.streaming.controller.data.IRestResponse;
+import com.gehealthcare.mps.streaming.controller.data.DataResponse;
+import com.gehealthcare.mps.streaming.controller.data.SessionRequest;
+
+/**
+ * 
+ */
+@Service(value = "wsSendService")
+public class WSSendService implements WSService {
+
+	private final CacheManager cacheManager;
+
+	private final SimpMessagingTemplate messagingTemplate;
+
+	public WSSendService(SimpMessagingTemplate messagingTemplate, CacheManager cacheManager) {
+		this.cacheManager = cacheManager;
+		this.messagingTemplate = messagingTemplate;
+	}
+
+	@CachePut(value = "topics", key = "#wsRequest.getSessionId()")
+	public IRestResponse process(WSRequest wsRequest) {
+
+		// Create response
+		SubscriptionResponse subscriptionResponse = new SubscriptionResponse();
+		subscriptionResponse.setResult("Static message from send method");
+
+		System.out.println("--SEND--");
+		System.out.println("Topics: " + wsRequest.getTopics());
+
+		String data = "[\r\n" + "\"topics\":[\r\n" + "\"dcs.device.event\"\r\n" + "{\r\n"
+				+ "\"resourceId\": \"device01\",\r\n" + "\"resourceType\": \"Device\", \r\n"
+				+ "\"dcs.device.data\",\r\n" + "]\r\n" + "}]";
+
+		if (data == null) {
+			// Do nothing if data is null
+			messagingTemplate.convertAndSend("/topic/messages", "--null--");
+		} else {
+			// Assuming messagingTemplate is properly defined and configured elsewhere in
+			// your code
+			//messagingTemplate.convertAndSend("/topic/messages", "--null--");
+			messagingTemplate.convertAndSend("/topic/messages", data);
+		}
+
+		return subscriptionResponse;
+	}
+}
+
+
+package com.gehealthcare.mps.streaming.cache;
+
+import java.util.Set;
+
+public interface SubscriptionRegistryManager {
+	public Set<Subscriber> getSubscribersForTopic(String topicName);
+
+	public void addSubscriberToTopic(String topicName, Subscriber subscriber);
+	
+	public void uodateSubscriberToTopic(String topicName, Subscriber subscriber);
+
+	public void removeSubscriberFromTopic(String topicName, Subscriber subscriber);
+
+	public void persistInCache(SubscriptionRegistry subscriptionRegistry);
+	
+	public SubscriptionRegistry getSubscriptionRegistry();
+}
+
+
+/**
+ * 
+ */
+package com.gehealthcare.mps.streaming.cache;
+
+import java.util.HashSet;
+import java.util.Set;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.cache.annotation.Cacheable;
+
+/**
+ * 
+ */
+public class SubscriptionRegistryManagerImpl implements SubscriptionRegistryManager {
+
+	@Autowired
+	private SubscriptionRegistry subscriptionRegistry;
+	
+	@Override
+	public Set<Subscriber> getSubscribersForTopic(String topicName) {
+		return subscriptionRegistry.getRegistry().get(topicName);
+	}
+
+	public void addSubscriberToTopic(String topicName, Subscriber subscriber) {
+		if (subscriptionRegistry.getRegistry().get(topicName) == null) {
+			subscriptionRegistry.getRegistry().put(topicName, new HashSet<>());
+		}
+		subscriptionRegistry.getRegistry().get(topicName).add(subscriber);
+	}
+
+	@Override
+	public void uodateSubscriberToTopic(String topicName, Subscriber subscriber) {
+		// TODO Auto-generated method stub
+
+	}
+
+	public void removeSubscriberFromTopic(String topicName, Subscriber subscriber) {
+		if (subscriptionRegistry.getRegistry().get(topicName) == null) {
+			return;
+		}
+		subscriptionRegistry.getRegistry().get(topicName).remove(subscriber);
+	}
+
+	@Override
+	public void persistInCache(SubscriptionRegistry subscriptionRegistry) {
+		// TODO Auto-generated method stub
+
+	}
+
+	@Override
+	@Cacheable(cacheNames = "subscriptionRegistry")
+	public SubscriptionRegistry getSubscriptionRegistry() {
+		// TODO Auto-generated method stub
+		
+		return subscriptionRegistry;
+	}
+
+}
+package com.gehealthcare.mps.streaming.cache;
+
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
+
+import org.springframework.cache.annotation.Cacheable;
+
+/**
+ * 
+ */
+public class SubscriptionRegistry {
+
+	private Map<String, Set<Subscriber>> registry;
+
+	public Map<String, Set<Subscriber>> getRegistry() {
+		return registry;
+	}
+
+	
+	public void setRegistry(Map<String, Set<Subscriber>> registry) {
+		this.registry = registry;
+	}
+
+	/*
+	 * public void persistInCache(SubscriptionRegistry subscriptionRegistry) {
+	 * 
+	 * }
+	 * 
+	 * public void uodateSubscriberToTopic(String topicName, Subscriber subscriber)
+	 * {
+	 * 
+	 * }
+	 */
+}
+/**
+ * 
+ */
+package com.gehealthcare.mps.streaming.cache;
+
+import org.springframework.cache.CacheManager;
+import org.springframework.cache.annotation.EnableCaching;
+import org.springframework.cache.concurrent.ConcurrentMapCacheManager;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+/**
+ * 
+ */
+
+@Configuration
+@EnableCaching
+public class SubscriberManager {
+
+	@Bean
+	public CacheManager cacheManager() {
+		return new ConcurrentMapCacheManager("subscribers", "topics");
+	}
+	
+	//here add cacheput
+	//add
+	//
+	
+	
+	//here cacheevidet
+	//delete
+	
+	//cacheput
+	//update
+	//
+
+}
+
