@@ -1,0 +1,93 @@
+/**
+ * 
+ */
+package com.gehealthcare.mps.streaming.cache;
+
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Map.Entry;
+import java.util.Set;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.cache.annotation.CachePut;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.stereotype.Component;
+
+/**
+ * 
+ */
+@Component
+public class SubscriptionRegistryManagerImpl implements SubscriptionRegistryManager {
+
+	@Autowired
+	private SubscriptionRegistry subscriptionRegistry;
+
+	@Override
+	public Set<Subscriber> getSubscribersForTopic(String topicName) {
+		if (subscriptionRegistry.getRegistry().getOrDefault(topicName, new HashSet<>()) == null) {
+			return null;
+		} else {
+			return subscriptionRegistry.getRegistry().getOrDefault(topicName, new HashSet<>());
+		}
+	}
+
+	@Override
+	@CachePut(cacheNames = "subscriptions", key = "#Subscriber.subscribeId")
+	public void addSubscriberToTopic(String topicName, Subscriber subscriber) {
+		subscriptionRegistry.getRegistry().computeIfAbsent(topicName, k -> new HashSet<>()).add(subscriber);
+	}
+
+	@Override
+	public void removeSubscriberFromTopic(String topicName, Subscriber subscriber) {
+		Set<Subscriber> subscribers = subscriptionRegistry.getRegistry().get(topicName);
+		if (subscribers != null) {
+			subscribers.remove(subscriber);
+		}
+	}
+
+	@Override
+	public void persistInCache(SubscriptionRegistry subscriptionRegistry) {
+		// Logic to persist the subscription registry
+	}
+
+	@Override
+	@Cacheable(cacheNames = "subscriptionRegistry")
+	public SubscriptionRegistry getSubscriptionRegistry() {
+		return subscriptionRegistry;
+	}
+
+	@Override
+	@CachePut(cacheNames = "subscriptions", key = "#Subscriber.subscribeId")
+	public void updateSubscriberToTopic(String topicName, Subscriber subscriber) {
+		// TODO Auto-generated method stub
+
+	}
+
+	@Override
+	@Cacheable(cacheNames = "subscriptions", key = "#wsRequest.getSessionId()")
+	public Subscriber getSubscriptionBySubscribeId(String subscribeId) {
+
+		for (Entry<String, Set<Subscriber>> entry : subscriptionRegistry.getRegistry().entrySet()) {
+			Set<Subscriber> subscribers = entry.getValue();
+			for (Subscriber subscriber : subscribers) {
+				if (subscriber.getSubscriptionId().equals(subscribeId)) {
+					return new Subscriber(subscribeId, entry.getKey(), subscribers);
+				}
+			}
+
+		}
+		return null;
+	}
+
+	@Override
+	public Subscriber getSubscriber(String sessionId) {
+		// TODO Auto-generated method stub
+		return null;
+	}
+
+	@Override
+	public void saveSubscription(String sessionId, Subscriber subscriber) {
+		// TODO Auto-generated method stub
+
+	}
+}
