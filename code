@@ -425,3 +425,251 @@ public class SubscriberManager {
 
 }
 
+
+
+
+
+
+Here's the continuation with the implementation of the remaining services and the response classes:
+
+### 7. Define Other Services and Responses
+
+#### **SubscriptionResponse.java**
+This class will be used as a response object.
+
+```java
+package com.example.websocketdemo.service;
+
+public class SubscriptionResponse implements IRestResponse {
+    private String result;
+
+    public String getResult() {
+        return result;
+    }
+
+    public void setResult(String result) {
+        this.result = result;
+    }
+}
+```
+
+#### **IRestResponse.java**
+This interface will be used for all response types.
+
+```java
+package com.example.websocketdemo.service;
+
+public interface IRestResponse {
+    // Add common response methods if needed
+}
+```
+
+#### **WSConnectService.java**
+Service to handle "CONNECT" request type.
+
+```java
+package com.example.websocketdemo.service;
+
+import org.springframework.stereotype.Service;
+
+@Service("wsConnectService")
+public class WSConnectService implements WSService {
+
+    @Override
+    public IRestResponse process(WSRequest wsRequest) {
+        SubscriptionResponse response = new SubscriptionResponse();
+        response.setResult("Connected with session ID: " + wsRequest.getSessionId());
+        return response;
+    }
+}
+```
+
+#### **WSDisconnectService.java**
+Service to handle "DISCONNECT" request type.
+
+```java
+package com.example.websocketdemo.service;
+
+import org.springframework.stereotype.Service;
+
+@Service("wsDisconnectService")
+public class WSDisconnectService implements WSService {
+
+    @Override
+    public IRestResponse process(WSRequest wsRequest) {
+        SubscriptionResponse response = new SubscriptionResponse();
+        response.setResult("Disconnected session ID: " + wsRequest.getSessionId());
+        return response;
+    }
+}
+```
+
+#### **WSSubscriptionService.java**
+Service to handle "SUBSCRIBE" request type.
+
+```java
+package com.example.websocketdemo.service;
+
+import org.springframework.stereotype.Service;
+
+@Service("wsSubscriptionService")
+public class WSSubscriptionService implements WSService {
+
+    @Override
+    public IRestResponse process(WSRequest wsRequest) {
+        SubscriptionResponse response = new SubscriptionResponse();
+        response.setResult("Subscribed with session ID: " + wsRequest.getSessionId());
+        return response;
+    }
+}
+```
+
+#### **WSUnsubscriptionService.java**
+Service to handle "UNSUBSCRIBE" request type.
+
+```java
+package com.example.websocketdemo.service;
+
+import org.springframework.stereotype.Service;
+
+@Service("wsUnsubscriptionService")
+public class WSUnsubscriptionService implements WSService {
+
+    @Override
+    public IRestResponse process(WSRequest wsRequest) {
+        SubscriptionResponse response = new SubscriptionResponse();
+        response.setResult("Unsubscribed with session ID: " + wsRequest.getSessionId());
+        return response;
+    }
+}
+```
+
+### 8. Cache Configuration
+
+Ensure that the `SubscriptionRegistryManager` and `SubscriptionRegistry` classes are correctly set up to handle caching.
+
+#### **SubscriptionRegistryManager.java**
+This interface will manage subscribers.
+
+```java
+package com.example.websocketdemo.cache;
+
+import java.util.Set;
+
+public interface SubscriptionRegistryManager {
+    Set<Subscriber> getSubscribersForTopic(String topicName);
+
+    void addSubscriberToTopic(String topicName, Subscriber subscriber);
+
+    void updateSubscriberToTopic(String topicName, Subscriber subscriber);
+
+    void removeSubscriberFromTopic(String topicName, Subscriber subscriber);
+
+    void persistInCache(SubscriptionRegistry subscriptionRegistry);
+    
+    SubscriptionRegistry getSubscriptionRegistry();
+}
+```
+
+#### **SubscriptionRegistryManagerImpl.java**
+Implementation of the `SubscriptionRegistryManager` interface.
+
+```java
+package com.example.websocketdemo.cache;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.stereotype.Component;
+
+import java.util.HashSet;
+import java.util.Set;
+
+@Component
+public class SubscriptionRegistryManagerImpl implements SubscriptionRegistryManager {
+
+    @Autowired
+    private SubscriptionRegistry subscriptionRegistry;
+
+    @Override
+    public Set<Subscriber> getSubscribersForTopic(String topicName) {
+        return subscriptionRegistry.getRegistry().getOrDefault(topicName, new HashSet<>());
+    }
+
+    @Override
+    public void addSubscriberToTopic(String topicName, Subscriber subscriber) {
+        subscriptionRegistry.getRegistry()
+                .computeIfAbsent(topicName, k -> new HashSet<>())
+                .add(subscriber);
+    }
+
+    @Override
+    public void updateSubscriberToTopic(String topicName, Subscriber subscriber) {
+        // Logic to update a subscriber
+    }
+
+    @Override
+    public void removeSubscriberFromTopic(String topicName, Subscriber subscriber) {
+        Set<Subscriber> subscribers = subscriptionRegistry.getRegistry().get(topicName);
+        if (subscribers != null) {
+            subscribers.remove(subscriber);
+        }
+    }
+
+    @Override
+    public void persistInCache(SubscriptionRegistry subscriptionRegistry) {
+        // Logic to persist the subscription registry
+    }
+
+    @Override
+    @Cacheable(cacheNames = "subscriptionRegistry")
+    public SubscriptionRegistry getSubscriptionRegistry() {
+        return subscriptionRegistry;
+    }
+}
+```
+
+#### **SubscriptionRegistry.java**
+This class will hold the registry of subscribers.
+
+```java
+package com.example.websocketdemo.cache;
+
+import java.util.Map;
+import java.util.Set;
+
+public class SubscriptionRegistry {
+
+    private Map<String, Set<Subscriber>> registry;
+
+    public Map<String, Set<Subscriber>> getRegistry() {
+        return registry;
+    }
+
+    public void setRegistry(Map<String, Set<Subscriber>> registry) {
+        this.registry = registry;
+    }
+}
+```
+
+#### **Subscriber.java**
+This class represents a subscriber.
+
+```java
+package com.example.websocketdemo.cache;
+
+public class Subscriber {
+    private String sessionId;
+
+    // Getters and setters
+}
+```
+
+### 9. Testing and Validation
+
+Ensure that you have all necessary dependencies in your `pom.xml` for Spring Boot, WebSocket, and caching.
+
+Test the entire setup by running your Spring Boot application and using the provided HTML file to connect to the WebSocket, send messages, subscribe, and unsubscribe.
+
+### Conclusion
+
+With these steps, you should be able to send a JSON message from a WebSocket client to a Spring Boot controller, process it using an abstract factory pattern, and store the session ID and topics in the cache. Each service (send, subscribe, unsubscribe, connect, and disconnect) is handled by its respective implementation class, making the code modular and easier to maintain.
