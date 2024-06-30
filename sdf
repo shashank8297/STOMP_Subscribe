@@ -3,91 +3,214 @@
  */
 package com.gehealthcare.mps.streaming.cache;
 
-import java.util.HashSet;
-import java.util.Map;
-import java.util.Map.Entry;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Set;
+import java.util.UUID;
 
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.cache.annotation.CachePut;
+import org.springframework.boot.autoconfigure.kafka.KafkaProperties.Retry.Topic;
 import org.springframework.cache.annotation.Cacheable;
-import org.springframework.stereotype.Component;
 
 /**
  * 
  */
-@Component
-public class SubscriptionRegistryManagerImpl implements SubscriptionRegistryManager {
+@Cacheable("subscriber")
+public class Subscriber {
 
+	private String SubscriptionId;
+	// private String brokerSessionId;
+	private String sessionId;
+	private String brokerDestination;
+	private String userId;
+//    private List<GrantedAuthority> grantedAuthorities;
+	private UUID orgId;
+	
+	public String getSessionId() {
+		return sessionId;
+	}
+
+	public void setSessionId(String sessionId) {
+		this.sessionId = sessionId;
+	}
+
+
+	public String getBrokerDestination() {
+		return brokerDestination;
+	}
+
+	public void setBrokerDestination(String brokerDestination) {
+		this.brokerDestination = brokerDestination;
+	}
+
+	public String getUserId() {
+		return userId;
+	}
+
+	public void setUserId(String userId) {
+		this.userId = userId;
+	}
+
+	public UUID getOrgId() {
+		return orgId;
+	}
+
+	public void setOrgId(UUID orgId) {
+		this.orgId = orgId;
+	}
+	
+	public String getSubscriptionId() {
+		return SubscriptionId;
+	}
+
+	public void setSubscriptionId(String subscriptionId) {
+		SubscriptionId = subscriptionId;
+	}
+
+	/*
+	 * public Subscriber(String sessionId, String string, Set<Subscriber>
+	 * subscribers) { this.sessionId = sessionId; }
+	 */
+
+	public Subscriber(String sessionId) {
+		this.sessionId = sessionId;
+	}
+
+	@Override
+	public String toString() {
+		return "Subscriber [SubscriptionId=" + SubscriptionId + ", sessionId=" + sessionId + ", brokerDestination="
+				+ brokerDestination + ", userId=" + userId + ", orgId=" + orgId + ", getSessionId()=" + getSessionId()
+				+ ", getBrokerDestination()=" + getBrokerDestination() + ", getUserId()=" + getUserId()
+				+ ", getOrgId()=" + getOrgId() + ", getSubscriptionId()=" + getSubscriptionId() + ", getClass()="
+				+ getClass() + ", hashCode()=" + hashCode() + ", toString()=" + super.toString() + "]";
+	}
+	
+	
+
+	/*
+	 * public Subscriber() { List<String> topics = new ArrayList<>();
+	 * topics.add("dcs_device_data"); topics.add("dcs.device.event");
+	 * topics.add("dcs_workflow_event"); }
+	 */
+
+	/*
+	 * @Override public boolean equals(Object o) { if (this == o) return true; if (o
+	 * == null || getClass() != o.getClass()) return false;
+	 * 
+	 * Subscriber that = (Subscriber) o;
+	 * 
+	 * return sessionId != null ? sessionId.equals(that.sessionId) : that.sessionId
+	 * == null; }
+	 * 
+	 * @Override public int hashCode() { return sessionId != null ?
+	 * sessionId.hashCode() : 0; }
+	 */
+}
+
+
+
+package com.gehealthcare.mps.streaming.service.ws;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.cache.Cache;
+import org.springframework.cache.CacheManager;
+import org.springframework.cache.annotation.CachePut;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
+import org.springframework.stereotype.Service;
+
+import com.gehealthcare.mps.streaming.cache.Subscriber;
+import com.gehealthcare.mps.streaming.cache.SubscriberManager;
+import com.gehealthcare.mps.streaming.controller.data.IRestResponse;
+
+@Service("wsConnectService")
+public class WSConnectService implements WSService {
+
+	private CacheManager cacheManager;
+
+	private SimpMessagingTemplate messagingTemplate;
+	
 	@Autowired
-	private SubscriptionRegistry subscriptionRegistry;
+	private SubscriberManager subscriberManager ;
 
-	@Override
-	public Set<Subscriber> getSubscribersForTopic(String topicName) {
-		if (subscriptionRegistry.getRegistry().getOrDefault(topicName, new HashSet<>()) == null) {
-			return null;
-		} else {
-			return subscriptionRegistry.getRegistry().getOrDefault(topicName, new HashSet<>());
-		}
+	public WSConnectService(SimpMessagingTemplate messagingTemplate, CacheManager cacheManager) {
+		this.cacheManager = cacheManager;
+		this.messagingTemplate = messagingTemplate;
 	}
 
 	@Override
-	@CachePut(cacheNames = "subscriptions", key = "#Subscriber.subscribeId")
-	public void addSubscriberToTopic(String topicName, Subscriber subscriber) {
-		subscriptionRegistry.getRegistry().computeIfAbsent(topicName, k -> new HashSet<>()).add(subscriber);
+	public IRestResponse process(WSRequest wsRequest) {
+		SubscriptionResponse subscriptionResponse = new SubscriptionResponse();
+		subscriptionResponse.setResult("Static message from Connect method");
+		System.out.println("--CONNECT--");
+		//Subscriber subscriber = new Subscriber(wsRequest.getSessionId(),"sessionId");
+		//Subscriber subscriber = new Subscriber("");
+		Subscriber subscriber = new Subscriber(wsRequest.getSessionId());
+		subscriberManager.add(subscriber);
+		
+		System.out.println(cacheManager.getCacheNames());
+		Cache cache = cacheManager.getCache("subscribers");
+		
+		
+		//subscriberManager.delete(subscriber);
+		/*
+		 * Cache cache = cacheManager.getCache("subscribers");
+		 * cache.put(wsRequest.getSessionId(), subscriber);
+		 */
+		messagingTemplate.convertAndSend("/topic/messages", "Static message from Connect method");
+		return subscriptionResponse;
+	}
+}
+/**
+ * 
+ */
+package com.gehealthcare.mps.streaming.cache;
+
+import org.springframework.cache.Cache;
+import org.springframework.cache.CacheManager;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.CachePut;
+import org.springframework.cache.annotation.EnableCaching;
+import org.springframework.cache.concurrent.ConcurrentMapCacheManager;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+import com.gehealthcare.mps.streaming.service.ws.WSRequest;
+
+/**
+ * 
+ */
+
+@Configuration
+//@EnableCaching
+public class SubscriberManager {
+
+	private CacheManager cacheManager;
+
+	@Bean
+	public CacheManager cacheManager() {
+		return new ConcurrentMapCacheManager("subscribers", "topics");
 	}
 
-	@Override
-	public void removeSubscriberFromTopic(String topicName, Subscriber subscriber) {
-		Set<Subscriber> subscribers = subscriptionRegistry.getRegistry().get(topicName);
-		if (subscribers != null) {
-			subscribers.remove(subscriber);
-		}
+	// @CachePut(value = "subscribers", key = "#wsRequest.getSessionId()")
+	@CachePut(value = "subscribers")
+	public Subscriber add(Subscriber subscriber) {
+		return subscriber;
 	}
 
-	@Override
-	public void persistInCache(SubscriptionRegistry subscriptionRegistry) {
-		// Logic to persist the subscription registry
+	// @CacheEvict(value = "subscribers", key = "#wsRequest.getSessionId()")
+	@CacheEvict(value = "subscribers")
+	public Subscriber delete(Subscriber subscriber) {
+		return subscriber;
 	}
 
-	@Override
-	@Cacheable(cacheNames = "subscriptionRegistry")
-	public SubscriptionRegistry getSubscriptionRegistry() {
-		return subscriptionRegistry;
-	}
+	// here add cacheput
+	// add
+	//
 
-	@Override
-	@CachePut(cacheNames = "subscriptions", key = "#Subscriber.subscribeId")
-	public void updateSubscriberToTopic(String topicName, Subscriber subscriber) {
-		// TODO Auto-generated method stub
+	// here cacheevidet
+	// delete
 
-	}
+	// cacheput
+	// update
+	//
 
-	@Override
-	@Cacheable(cacheNames = "subscriptions", key = "#wsRequest.getSessionId()")
-	public Subscriber getSubscriptionBySubscribeId(String subscribeId) {
-
-		for (Entry<String, Set<Subscriber>> entry : subscriptionRegistry.getRegistry().entrySet()) {
-			Set<Subscriber> subscribers = entry.getValue();
-			for (Subscriber subscriber : subscribers) {
-				if (subscriber.getSubscriptionId().equals(subscribeId)) {
-					return new Subscriber(subscribeId, entry.getKey(), subscribers);
-				}
-			}
-
-		}
-		return null;
-	}
-
-	@Override
-	public Subscriber getSubscriber(String sessionId) {
-		// TODO Auto-generated method stub
-		return null;
-	}
-
-	@Override
-	public void saveSubscription(String sessionId, Subscriber subscriber) {
-		// TODO Auto-generated method stub
-
-	}
 }
